@@ -1,0 +1,64 @@
+<mxfile host="65bd71144e">
+    <diagram id="gLNbR0nSHMRnbHvfJ-Zm" name="Page-1">
+        <mxGraphModel dx="1024" dy="932" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="18" value="" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="410" y="310" width="660" height="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="120" y="355" width="210" height="290" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="Workflow &lt;br&gt;(Capture everything needed to run an app)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+                    <mxGeometry x="120" y="355" width="210" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="440" y="350" width="290" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="5" value="Workflow Run" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+                    <mxGeometry x="530" y="350" width="110" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="6" value="Process" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="455" y="390" width="255" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="7" value="Run directory (input, output, temp, log)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="455" y="430" width="255" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="8" value="Workspace (Conda venv, code repo, PYTHONPATH)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="150" y="415" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="9" value="Model directory" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="150" y="485" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="10" value="Workflow.json" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="150" y="535" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="11" value="metadata" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="150" y="585" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="12" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="750" y="350" width="290" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="13" value="Workflow Run" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+                    <mxGeometry x="840" y="350" width="110" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="14" value="Process" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="765" y="390" width="255" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="15" value="Run directory (input, output, temp, log)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="765" y="430" width="255" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="16" value="" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="2" target="18">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="470" y="630" as="sourcePoint"/>
+                        <mxPoint x="520" y="580" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="19" value="Capture app run state" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+                    <mxGeometry x="625" y="310" width="230" height="30" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
