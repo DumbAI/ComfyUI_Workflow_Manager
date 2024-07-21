@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 import uuid
 
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 
 from workflow.in_mem_store import DataStore
 
@@ -44,7 +44,9 @@ class Workflow(BaseModel):
     description: str
     env: PythonCondaEnv
     load_model_dir: Dir
+    input_dir: Optional[Dir] = None # default input folder for the workflow
     metadata_dir: Dir # metadata dir, e.g., workflow.json, workflow_api.json
+    config: Dict = {} # workflow config, e.g., workflow.json, workflow_api.json
 
 class WorkflowRun(BaseModel):
     id: Optional[str] = Field(default=None, primary_key=True)
@@ -52,10 +54,10 @@ class WorkflowRun(BaseModel):
     status: str
     start_time: str
     end_time: str
-    output_dir: Dir
-    log_dir: Dir
-    session_dir: Optional[Dir] = None
-    workspace: Optional[Dir] = None
+
+    input_dir: Optional[Dir] = None # deprecated
+    output_dir: Optional[Dir] = None
+    workspace: Optional[Dir] = None # ComfyUI workspace
     status: Optional[str] = None
 
 

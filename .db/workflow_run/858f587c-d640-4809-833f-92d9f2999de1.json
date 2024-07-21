@@ -1,16 +1,1 @@
-{
-    "id": "858f587c-d640-4809-833f-92d9f2999de1",
-    "workflow_id": "e7b01fd3-dbbf-4b0b-8cd0-24702d68e6d0",
-    "status": "running",
-    "start_time": "2021-09-01 12:00:00",
-    "end_time": "2021-09-01 12:01:00",
-    "workspace": {
-        "dir_path": "/home/ruoyu.huang/workspace/xiaoapp/ComfyUI"
-    },
-    "output_dir": {
-        "dir_path": "/home/ruoyu.huang/workspace/xiaoapp/output"
-    },
-    "log_dir": {
-        "dir_path": "/home/ruoyu.huang/workspace/xiaoapp/logs"
-    }
-}
+{"id":"858f587c-d640-4809-833f-92d9f2999de1","workflow_id":"e7b01fd3-dbbf-4b0b-8cd0-24702d68e6d0","status":"success","start_time":"2021-09-01 12:00:00","end_time":"2021-09-01 12:01:00","input_dir":{"dir_path":"/home/ruoyu.huang/workspace/xiaoapp/tmp/input"},"output_dir":{"dir_path":"/home/ruoyu.huang/workspace/xiaoapp/tmp/output"},"workspace":{"dir_path":"/home/ruoyu.huang/workspace/xiaoapp/ComfyUI"}}

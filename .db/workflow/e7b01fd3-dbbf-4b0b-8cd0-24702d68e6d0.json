@@ -16,6 +16,9 @@
     "load_model_dir": {
         "dir_path": "/home/ruoyu.huang/workspace/xiaoapp/models"
     },
+    "input_dir": {
+        "dir_path": "/home/ruoyu.huang/workspace/xiaoapp/ComfyUI/input"
+    },
     "metadata_dir": {
         "dir_path": "/home/ruoyu.huang/workspace/xiaoapp/metadata"
     }

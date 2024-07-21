@@ -25,3 +25,13 @@ The framework UI should show status of all worker, including CPU, GPU, Mem utili
 # Work log
 
 ## 7/19
+Test workflow
+```
+cd py
+PYTHONPATH=$(pwd) python workflow/controller.py
+```
+
+
+Manual Step 
+* Tune on Dev mode, save workflow API format
+* Display node ID: https://www.reddit.com/r/comfyui/comments/1aotb3w/which_custom_node_shows_the_node_id_number_on/
