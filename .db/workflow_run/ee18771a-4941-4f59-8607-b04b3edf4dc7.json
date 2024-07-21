@@ -1,0 +1,16 @@
+{
+    "id": "ee18771a-4941-4f59-8607-b04b3edf4dc7",
+    "workflow_id": "119e4ff4-6d93-4aa9-bc29-a59ffa4e6002",
+    "status": "running",
+    "start_time": "2021-09-01 12:00:00",
+    "end_time": "2021-09-01 12:01:00",
+    "workspace": {
+        "dir_path": "/home/ruoyu.huang/workspace/xiaoapp/ComfyUI"
+    },
+    "output_dir": {
+        "dir_path": "/home/ruoyu.huang/workspace/xiaoapp/output"
+    },
+    "log_dir": {
+        "dir_path": "/home/ruoyu.huang/workspace/xiaoapp/logs"
+    }
+}

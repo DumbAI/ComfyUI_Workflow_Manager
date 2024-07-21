@@ -12,3 +12,16 @@ The framework should make it easy to package and distribute via an app store.
 
 The framework should offer native eval components for AI app (validation, human review, accuracy dashboard)
 
+The framework should able to run workflow in two mode: mutable (interactive) and immutable
+
+The framework should run workflows in parallel, and manage a worker pool
+
+The framework should be able to run workflow in remote machine (how??? Skypilot?)
+
+The framework UI should show status of all worker, including CPU, GPU, Mem utilization
+
+
+
+# Work log
+
+## 7/19
