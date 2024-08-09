@@ -22,7 +22,14 @@ export default function Workflow() {
         <h1>Workflows</h1>
         <ul>
           {_.map(data.workflows, (workflow) => (
-            <li key={workflow.id}>{workflow.name} - {workflow.id}</li>
+            <li key={workflow.id}>
+              <h2>
+                {workflow.name} - {workflow.id}
+              </h2>
+              <p>
+                {JSON.stringify(workflow)}
+              </p>
+            </li>
           ))}
         </ul>
       </div>
