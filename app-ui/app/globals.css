@@ -60,11 +60,10 @@
 }
 
 @layer base {
-  /* FIEME: added by shadcn, but does not compile?? */
   * {
-    @apply border-black;
+    @apply border-border;
   }
   body {
-    @apply bg-auto;
+    @apply bg-background text-foreground;
   }
 }

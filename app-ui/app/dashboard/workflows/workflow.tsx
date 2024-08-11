@@ -4,6 +4,17 @@ import * as React from 'react'
 import axios from 'axios'
 import useSWR from 'swr'
 
+import { Button } from "@/components/ui/button"
+
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
 import _ from 'lodash'
 
 export default function Workflow() {
@@ -19,16 +30,31 @@ export default function Workflow() {
   
     return (
       <div>
-        <h1>Workflows</h1>
+        <h1 className="text-3xl font-bold my-4">Workflows</h1>
+        
         <ul>
           {_.map(data.workflows, (workflow) => (
             <li key={workflow.id}>
-              <h2>
-                {workflow.name} - {workflow.id}
-              </h2>
-              <p>
-                {JSON.stringify(workflow)}
-              </p>
+              <Card>
+                <CardHeader>
+                  <CardTitle>
+                    <div className='flex flex-row justify-between'>
+                      <h2>
+                        {workflow.name}
+                      </h2>
+                      <Button >Secondary</Button>
+                    </div>
+                  </CardTitle>
+                  <CardDescription>{workflow.id}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p>{workflow.description}</p>
+                  <p className='break-words'>{JSON.stringify(workflow)}</p>
+                </CardContent>
+                {/* <CardFooter>
+                  <p></p>
+                </CardFooter> */}
+              </Card>
             </li>
           ))}
         </ul>
