@@ -42,7 +42,9 @@ export default function Workflow() {
                       <h2>
                         {workflow.name}
                       </h2>
-                      <Button >Secondary</Button>
+                      <Button>
+                        Launch
+                      </Button>
                     </div>
                   </CardTitle>
                   <CardDescription>{workflow.id}</CardDescription>
@@ -50,6 +52,7 @@ export default function Workflow() {
                 <CardContent>
                   <p>{workflow.description}</p>
                   <p className='break-words'>{JSON.stringify(workflow)}</p>
+                  <iframe src={`http://localhost:8188`} width="100%" height="800px"></iframe>
                 </CardContent>
                 {/* <CardFooter>
                   <p></p>

@@ -31,7 +31,9 @@ cd py
 PYTHONPATH=$(pwd) python workflow/controller.py
 ```
 
-
 Manual Step 
 * Tune on Dev mode, save workflow API format
 * Display node ID: https://www.reddit.com/r/comfyui/comments/1aotb3w/which_custom_node_shows_the_node_id_number_on/
+
+## 8/4
+Basic UI function to mange workflows

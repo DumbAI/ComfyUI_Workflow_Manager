@@ -22,18 +22,10 @@ from workflow.utils import logger
 
 import requests
 
-# Global data stores
-workflow_db = DataStore("workflow", data_model=Workflow, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
-workflow_run_db = DataStore("workflow_run", data_model=WorkflowRun, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
 
-def force_create_symlink(source, link_name):
-    """ Create a symlink, remove existing file or symlink if exists"""
-    if os.path.isfile(source):
-        if os.path.exists(link_name) or os.path.islink(link_name):
-            os.remove(link_name)
-        os.symlink(source, link_name)
 
 class Runner(ABC):
+    """ Abstract class for running a workflow """
 
     @abstractmethod
     def setup(self):
@@ -81,58 +73,69 @@ class ComfyUIProcessRunner(Runner):
         number: int
         node_errors: Optional[Dict] = None
 
-    def __init__(self, workflow: Workflow, workflow_run: WorkflowRun):
+    def __init__(self, workflow: Workflow):
         self.workflow = workflow
-        self.workflow_run = workflow_run
+        
+        # workspace directories
+        self.work_dir = self.workflow.workflow_dir
+        self.input_dir = self.workflow.input_dir
+        self.output_dir = self.workflow.output_dir
+        self.temp_dir = self.workflow.temp_dir
+
         # run ComfyUI main process
         self.host = '127.0.0.1'
         self.port = str(random.randint(8189, 49151)) # random port
         self.comfyui_service = ComfyService(self.host, self.port)
 
-    def _launch_comfyui(self, extra):
-        reboot_path = None
+    def _launch_comfyui(self, extra_args):
+        """ Launch ComfyUI server in a subprocess, using conda venv and python module
+        """
 
-        session_path = self.workflow_run.output_dir.dir_path if self.workflow_run.output_dir is not None else f'/tmp/comfyui-workflow/{self.workflow_run.id}'
-        if not os.path.exists(session_path):
-            os.makedirs(session_path)
+        # venv
+        conda_venv_path = self.workflow.python_venv.conda_env_path
 
-        log_file = os.path.join(session_path, "log")
 
-        new_env = os.environ.copy()
-
-        # session_path = os.path.join(
-        #     ConfigManager().get_config_path(), "tmp", str(uuid.uuid4())
-        # )
-        # new_env["__COMFY_CLI_SESSION__"] = session_path
-        new_env["PYTHONENCODING"] = "utf-8"
+        # new_env = os.environ.copy()
+        python_env = {
+            "PYTHONENCODING":"utf-8", # is this required?
+            'PYTHONPATH': self.workflow.main_module_dir
+        }
 
         # To minimize the possibility of leaving residue in the tmp directory, use files instead of directories.
+        # reboot_path = None
         # self.reboot_path = os.path.join(session_path, ".reboot")
 
-        extra = extra if extra is not None else []
+        extra_args = extra_args if extra_args is not None else []
+        
+        command = f'conda run -p {conda_venv_path}'
+        for k, v in python_env.items():
+            command += f' {k}={v}'
+        command += f' python -m main ' + ' '.join(extra_args)
 
         process = None
+        
+        log_file = os.path.join(self.output_dir, "workflow.log")
 
         try:
             with open(log_file, "w") as f:
                 while True:
                     if sys.platform == "win32":
                         process = subprocess.Popen(
-                            [sys.executable, "main.py"] + extra,
+                            command.split(),
                             stdout=f,
                             stderr=f,
                             text=True,
-                            env=new_env,
+                            env=os.environ,
                             encoding="utf-8",
                             shell=True,  # win32 only
                             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,  # win32 only
                         )
                     else:
-                        print(f"Running: {sys.executable} main.py {extra}")
+                        print(f"Running: {command}")
                         process = subprocess.Popen(
-                            [sys.executable, "main.py"] + extra,
+                            command.split(),
                             text=True,
-                            env=new_env,
+                            env=os.environ, # so that conda env is available
                             encoding="utf-8",
                             stdout=f,
                             stderr=f,
@@ -144,41 +147,11 @@ class ComfyUIProcessRunner(Runner):
 
 
     def setup(self):
-        # TODO: setup run workspaces
-
-        workspace_dir = self.workflow_run.workspace.dir_path
-        output_dir = self.workflow_run.output_dir.dir_path
-
-        # TODO: setup comfyui workspace (pull from git if needed)
-
-        # TODO: create session dir
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        output_dir = f'{self.workflow_run.output_dir.dir_path}/output'
-        # create output dir if not exists
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        """ Setup the ComfyUI server and wait for it to be ready """
 
         # FIXME: create a process cache, allow reused of processes. 
         # FIXME: manage server lifecycle using a state machine
 
-        # create symlink for all files in workflow input dir
-        # merge workflow input files and input override files
-        comfyui_input_dir = f'{self.workflow_run.input_dir.dir_path}/merge'
-        os.makedirs(comfyui_input_dir, exist_ok=True)
-        
-        input_files = os.listdir(self.workflow.input_dir.dir_path)
-        for input_file in input_files:
-            input_file_path = os.path.join(self.workflow.input_dir.dir_path, input_file)
-            force_create_symlink(input_file_path, os.path.join(comfyui_input_dir, input_file))
-        # files in workflow run input dir should override files from workflow input dir
-        input_files = os.listdir(self.workflow_run.input_dir.dir_path)
-        for input_file in input_files:
-            input_file_path = os.path.join(self.workflow_run.input_dir.dir_path, input_file)
-            force_create_symlink(input_file_path, os.path.join(comfyui_input_dir, input_file))
-            
-
-        
         # ComfyUI args
         # extra model paths config
         # 1) model path
@@ -188,11 +161,14 @@ class ComfyUIProcessRunner(Runner):
         args = [
             '--listen', self.host,
             '--port', self.port,
-            '--output-directory', f'{self.workflow_run.output_dir.dir_path}/output',
-            '--input-directory', comfyui_input_dir,
+            '--input-directory', self.input_dir,
+            '--output-directory', self.output_dir,
+            '--temp-directory', self.temp_dir,
+            '--extra-model-paths-config', f'{self.work_dir}/extra_model_paths.yaml',
+            '--verbose',
         ]
         
-        os.chdir(workspace_dir)
+        # os.chdir(self.work_dir)
         self.process = self._launch_comfyui(args)
         # self.proc = subprocess.Popen(command, capture_output=True, capture_error=True)
         # subprocess.run(command, capture_output=True, capture_error=True)
@@ -206,7 +182,7 @@ class ComfyUIProcessRunner(Runner):
 
     def run(self):
         workflow_config = None
-        workflow_api_config_file = f'{self.workflow.metadata_dir.dir_path}/workflow_api.json'
+        workflow_api_config_file = f'{self.work_dir}/workflow_api.json'
         with open(workflow_api_config_file, 'r') as f:
             workflow_config = json.load(f)
 
@@ -223,8 +199,6 @@ class ComfyUIProcessRunner(Runner):
                         # keep the rest of the input values unchanged
                         workflow_config[k]['inputs'].update(inputs)
             
-
-
         if workflow_config is None:
             logger.error(f"Error loading workflow config from {workflow_api_config_file}")
             return
@@ -272,7 +246,7 @@ class ComfyUIProcessRunner(Runner):
             with open(prompt_history_file, 'w') as f:
                 json.dump(get_history_response_json, f)
 
-            workflow_run_db.put(self.workflow_run) 
+            # workflow_run_db.put(self.workflow_run) 
             return
 
 
@@ -285,6 +259,30 @@ class ComfyUIProcessRunner(Runner):
             if returncode is None:
                 # process has not exit yet, force kill it
                 self.process.kill()
+
+            # terminate the sub python process launched by conda
+            import psutil
+            import signal
+            import sys
+
+            def get_conda_python_processes():
+                conda_python_path = self.workflow.python_venv.python_path
+                conda_python_processes = []
+
+                for proc in psutil.process_iter(['pid', 'name', 'exe']):
+                    try:
+                        if proc.info['exe'] is not None and os.path.samefile(proc.info['exe'], conda_python_path):
+                            conda_python_processes.append(proc.info)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        pass
+
+                return conda_python_processes
+
+            for p in get_conda_python_processes():
+                pid = p['pid']
+                logger.info(f"Terminating python process: {pid}")
+                os.kill(pid, signal.SIGTERM)
+
         except Exception as e:
             logger.error(f"Error terminating process: {e}. Force killing the process.")
             self.process.kill()
@@ -301,37 +299,14 @@ class ComfyUIProcessRunner(Runner):
 
         return 
 
-class WorkflowScheduler:
-    def __init__(self, workflow_db: DataStore, workflow_run_db: DataStore):
-        self.workflow_db = workflow_db
-        self.workflow_run_db = workflow_run_db
-        self.run_registry = {}
-
-    def schedule(self, workflow_id: str) -> None:
-        workflow = self.workflow_db.get(workflow_id)
-        assert workflow is not None
-        workflow_run = self.workflow_run_db.scan(lambda k, v: v.workflow_id == workflow_id)[0]
-        assert workflow_run is not None
-        logger.info(f"Workflow: {workflow}")
-        logger.info(f"Workflow Run: {workflow_run}")
-
-        runner = ComfyUIProcessRunner(workflow, workflow_run)
-        self.run_registry[workflow_run.id] = runner
-        logger.info(f"Starting workflow run: {workflow_run.id}")
-        runner.setup()
-        # time.sleep(60)
-        runner.run()
-        logger.info(f"Terminating workflow run: {workflow_run.id}")
-        runner.teardown()
-
-
 
 if __name__ == "__main__":
+    # Global data stores
     # workflow_db = DataStore("workflow", data_model=Workflow, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
     # workflow_run_db = DataStore("workflow_run", data_model=WorkflowRun, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
-    workflow_scheduler = WorkflowScheduler(workflow_db, workflow_run_db)
-    workflow_scheduler.schedule("e7b01fd3-dbbf-4b0b-8cd0-24702d68e6d0")
+    # workflow_db = DataStore("workflow", data_model=Workflow, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
+    # workflow_run_db = DataStore("workflow_run", data_model=WorkflowRun, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
+    # workflow_scheduler = WorkflowScheduler(workflow_db, workflow_run_db)
+    # workflow_scheduler.schedule("e7b01fd3-dbbf-4b0b-8cd0-24702d68e6d0")
 
-
-
-
+    pass

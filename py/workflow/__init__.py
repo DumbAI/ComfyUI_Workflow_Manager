@@ -1,8 +1,8 @@
 
 from .in_mem_store import DataStore
-from .db import Workflow, WorkflowRun, PythonCondaEnv, CodeRepo, EnvVars, Dir
+from .db import *
 
 __all__ = [
     DataStore,
-    Workflow, WorkflowRun, PythonCondaEnv, CodeRepo, EnvVars, Dir 
+    Workflow, WorkflowRun, PythonCondaEnv, EnvVars, Dir 
 ]
