@@ -5,6 +5,8 @@ import os
 
 from typing import Optional, List, Tuple, Dict
 
+from sqlmodel import Field, SQLModel, create_engine
+
 from workflow.in_mem_store import DataStore
 from workflow.utils import force_create_symlink
 
@@ -142,7 +144,7 @@ class Workflow(BaseModel):
         - ComfyUI # symlink to ComfyUI main repo
     """
 
-    id: str
+    id: str | None = Field(default=None, primary_key=True)
     name: str
     category: str = Field(default='comfyui', description='workspace category')
     description: str = Field(default='comfyui workflow', description='workflow description')
@@ -381,10 +383,12 @@ def reconstruct_inventory(base_path):
                 category=category, 
                 url=f'file:{model_path}'))
 
+
     inventory = Inventory(
         base_path=base_path, 
         modules=modules,
         models=models)
+    breakpoint()
     with open(f'{base_path}/inventory.json', 'w') as f:
         f.write(inventory.model_dump_json())
 
@@ -432,6 +436,11 @@ def reconstruct_workflow(base_path):
     return workflow
 
 
+def get_workflow_manifest(workflow_dir: str):
+    manifest_path = f'{workflow_dir}/manifest.json'
+    with open(manifest_path, 'r') as f:
+        workflow_to_run = Workflow.model_validate(json.load(f))
+        return workflow_to_run
 
 if __name__ == "__main__":
     base_path = "/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace"

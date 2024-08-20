@@ -24,6 +24,15 @@ export default function Workflow() {
         return res.data
         })
     })
+
+    const launchWorkflow = (workflowId: string) => {
+      console.log(`Launching workflow ${workflowId}`)
+      
+      return axios.post(`/api/workflows/${workflowId}/run`).then((res) => {
+        console.log(res.data)
+        return res.data
+        })
+    }
    
     if (error) return <div>failed to load</div>
     if (isLoading) return <div>loading...</div>
@@ -42,6 +51,7 @@ export default function Workflow() {
                       <h2>
                         {workflow.name}
                       </h2>
+                      {/* TODO: all API to launch ComfyUI and return the host:port */}
                       <Button>
                         Launch
                       </Button>

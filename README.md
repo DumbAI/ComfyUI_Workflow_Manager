@@ -37,3 +37,14 @@ Manual Step
 
 ## 8/4
 Basic UI function to mange workflows
+
+# 8/12
+Add data abstraction for inventory and workflow
+
+
+## 8/17
+build database
+
+```
+python -m workflow.state_manager
+```

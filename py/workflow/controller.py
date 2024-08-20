@@ -280,8 +280,15 @@ class ComfyUIProcessRunner(Runner):
 
             for p in get_conda_python_processes():
                 pid = p['pid']
+                if pid == os.getpid(): continue # dont kill current process
                 logger.info(f"Terminating python process: {pid}")
-                os.kill(pid, signal.SIGTERM)
+                # FIXME: this could kill all python process launched by the same conda env. 
+                # TODO: workflow manage need to manage its own conda env as well.
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except Exception as e:
+                    logger.error(f"Error terminating process: {e}. Force killing the process.")
+                    # os.kill(pid, signal.SIGKILL)
 
         except Exception as e:
             logger.error(f"Error terminating process: {e}. Force killing the process.")
