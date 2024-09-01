@@ -17,6 +17,18 @@ class WorkflowRecord(SQLModel, table=True):
     updated_at: str | None = None
 
 
+class WorkflowRunRecord(SQLModel, table=True):
+    # a record of a workflow run in database
+    id: int = Field(primary_key=True)
+    workflow_id: int
+    status: str
+    created_at: str
+    updated_at: str | None = None
+
+    # metadata, used to monitor and shutdown the workflow run process
+    host: str | None = None
+    port: int | None = None
+    
 
 def init_db():
     SQLModel.metadata.create_all(engine)

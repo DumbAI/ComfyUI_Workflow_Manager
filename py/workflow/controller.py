@@ -11,7 +11,9 @@ import json
 from datetime import datetime
 import subprocess
 import random
-import threading
+import atexit
+import signal
+
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
@@ -21,6 +23,31 @@ from workflow.db import Workflow, WorkflowRun, Dir
 from workflow.utils import logger
 
 import requests
+from queue import Queue
+
+# a global registry of all subprocesses
+subprocesses = Queue()
+
+def cleanup():
+    for i in range(subprocesses.qsize()):
+        process = subprocesses.get()
+        if process.poll() is None:  # Check if the process is still running
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+def handle_signal(signum, frame):
+    cleanup()
+    sys.exit(0)
+
+# Register the cleanup function to be called on exit
+atexit.register(cleanup)
+
+# Register signal handlers
+signal.signal(signal.SIGTERM, handle_signal)
+signal.signal(signal.SIGINT, handle_signal)
 
 
 
@@ -73,8 +100,10 @@ class ComfyUIProcessRunner(Runner):
         number: int
         node_errors: Optional[Dict] = None
 
+
     def __init__(self, workflow: Workflow):
         self.workflow = workflow
+        self.run_id = str(uuid.uuid4())
         
         # workspace directories
         self.work_dir = self.workflow.workflow_dir
@@ -83,9 +112,10 @@ class ComfyUIProcessRunner(Runner):
         self.temp_dir = self.workflow.temp_dir
 
         # run ComfyUI main process
-        self.host = '127.0.0.1'
+        self.host = '0.0.0.0'
         self.port = str(random.randint(8189, 49151)) # random port
         self.comfyui_service = ComfyService(self.host, self.port)
+
 
     def _launch_comfyui(self, extra_args):
         """ Launch ComfyUI server in a subprocess, using conda venv and python module
@@ -94,8 +124,6 @@ class ComfyUIProcessRunner(Runner):
         # venv
         conda_venv_path = self.workflow.python_venv.conda_env_path
 
-
-        # new_env = os.environ.copy()
         python_env = {
             "PYTHONENCODING":"utf-8", # is this required?
             'PYTHONPATH': self.workflow.main_module_dir
@@ -118,29 +146,29 @@ class ComfyUIProcessRunner(Runner):
 
         try:
             with open(log_file, "w") as f:
-                while True:
-                    if sys.platform == "win32":
-                        process = subprocess.Popen(
-                            command.split(),
-                            stdout=f,
-                            stderr=f,
-                            text=True,
-                            env=os.environ,
-                            encoding="utf-8",
-                            shell=True,  # win32 only
-                            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,  # win32 only
-                        )
-                    else:
-                        print(f"Running: {command}")
-                        process = subprocess.Popen(
-                            command.split(),
-                            text=True,
-                            env=os.environ, # so that conda env is available
-                            encoding="utf-8",
-                            stdout=f,
-                            stderr=f,
-                        )
-                    return process
+                if sys.platform == "win32":
+                    process = subprocess.Popen(
+                        command.split(),
+                        stdout=f,
+                        stderr=f,
+                        text=True,
+                        env=os.environ,
+                        encoding="utf-8",
+                        shell=True,  # win32 only
+                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,  # win32 only
+                    )
+                else:
+                    print(f"Running: {command}")
+                    process = subprocess.Popen(
+                        command.split(),
+                        text=True,
+                        env=os.environ, # so that conda env is available
+                        encoding="utf-8",
+                        stdout=f,
+                        stderr=f,
+                    )
+                subprocesses.put(process)
+                return process
         except KeyboardInterrupt:
             if process is not None:
                 os._exit(1)

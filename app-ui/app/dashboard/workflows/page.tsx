@@ -33,8 +33,6 @@ export default function Home() {
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
       <div className='w-full h-screen'>
         <Workflow></Workflow>
-        {/* <iframe className='w-full h-screen' src='http://127.0.0.1:8188' allowFullScreen/>  */}
-        {/* <iframe className='w-full h-screen' src='http://localhost:8188' allowFullScreen/>  */}
       </div>
     </main>
   );

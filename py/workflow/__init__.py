@@ -2,9 +2,11 @@
 from .in_mem_store import DataStore
 from .db import *
 from .database import *
+from .controller import ComfyUIProcessRunner
 
 __all__ = [
     DataStore,
+    ComfyUIProcessRunner,
     Workflow, WorkflowRun, PythonCondaEnv, EnvVars, Dir,
 
     # database operations
