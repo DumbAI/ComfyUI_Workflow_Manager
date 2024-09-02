@@ -15,12 +15,12 @@ import atexit
 import signal
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable
 from pydantic import BaseModel, Field
 
-from workflow.in_mem_store import DataStore
-from workflow.db import Workflow, WorkflowRun, Dir
-from workflow.utils import logger
+from .dao import Workflow, Workspace, Dir
+from workflow.database import WorkflowRunRecord
+from workflow.utils import logger, force_create_symlink
 
 import requests
 from queue import Queue
@@ -84,13 +84,11 @@ class ComfyService:
             return False
     
 
-
-
-
-class ComfyUIProcessRunner(Runner):
+class ComfyUIRunner(Runner):
     """ Run a ComfyUI workflow in a subprocess
     Reference: https://github.com/Comfy-Org/comfy-cli/blob/main/comfy_cli/command/launch.py
     TODO: manage server lifecycle using a state machine 
+    TODO: allocate GPU resources, shared cross multiple workflow runs
     """
 
     PROC_SHUTDOWN_TIMEOUT_SEC = 5
@@ -101,15 +99,22 @@ class ComfyUIProcessRunner(Runner):
         node_errors: Optional[Dict] = None
 
 
-    def __init__(self, workflow: Workflow):
+    def __init__(self, workspace: Workspace, workflow: Workflow, workflow_run: WorkflowRunRecord,
+                 callback: Optional[Callable[[WorkflowRunRecord], None]] = None):
+        self.workspace = workspace
         self.workflow = workflow
+        self.callback = callback # callback for status update
+        
         self.run_id = str(uuid.uuid4())
         
-        # workspace directories
-        self.work_dir = self.workflow.workflow_dir
-        self.input_dir = self.workflow.input_dir
-        self.output_dir = self.workflow.output_dir
-        self.temp_dir = self.workflow.temp_dir
+        # run time directories
+        workflow_run.runtime_dir = os.path.join(self.workspace.workflow_run_path, self.run_id) 
+        self.workflow_run = workflow_run
+        self.work_dir = self.workflow_run.runtime_dir
+        self.input_dir = self.workflow_run.input_dir
+        self.output_dir = self.workflow_run.output_dir
+        self.temp_dir = self.workflow_run.temp_dir
+
 
         # run ComfyUI main process
         self.host = '0.0.0.0'
@@ -117,16 +122,28 @@ class ComfyUIProcessRunner(Runner):
         self.comfyui_service = ComfyService(self.host, self.port)
 
 
+        # TODO: update workflow_run in database
+        self._update_status("pending")
+
+
+    def _update_status(self, status: str):
+        self.workflow_run.status = status
+        self.workflow_run.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.callback(self.workflow_run)
+
+
     def _launch_comfyui(self, extra_args):
         """ Launch ComfyUI server in a subprocess, using conda venv and python module
         """
 
         # venv
-        conda_venv_path = self.workflow.python_venv.conda_env_path
+        python_path = self.workflow.python_venv.virtualenv_python_path
 
+        # TODO: pass CUDA_VISIBLE_DEVICES from input
         python_env = {
             "PYTHONENCODING":"utf-8", # is this required?
-            'PYTHONPATH': self.workflow.main_module_dir
+            'PYTHONPATH': self.workflow.main_module_dir, # points to ComfyUI, so that main module can be found
+            'CUDA_VISIBLE_DEVICES': '0'
         }
 
         # To minimize the possibility of leaving residue in the tmp directory, use files instead of directories.
@@ -135,24 +152,19 @@ class ComfyUIProcessRunner(Runner):
 
         extra_args = extra_args if extra_args is not None else []
         
-        command = f'conda run -p {conda_venv_path}'
-        for k, v in python_env.items():
-            command += f' {k}={v}'
-        command += f' python -m main ' + ' '.join(extra_args)
-
-        process = None
         
-        log_file = os.path.join(self.output_dir, "workflow.log")
+        command = f' {python_path} -m main ' + ' '.join(extra_args)
+        process = None
 
         try:
-            with open(log_file, "w") as f:
+            with open(self.workflow_run.log_file, "w") as f:
                 if sys.platform == "win32":
                     process = subprocess.Popen(
                         command.split(),
                         stdout=f,
                         stderr=f,
                         text=True,
-                        env=os.environ,
+                        env=python_env,
                         encoding="utf-8",
                         shell=True,  # win32 only
                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,  # win32 only
@@ -162,7 +174,7 @@ class ComfyUIProcessRunner(Runner):
                     process = subprocess.Popen(
                         command.split(),
                         text=True,
-                        env=os.environ, # so that conda env is available
+                        env=python_env,
                         encoding="utf-8",
                         stdout=f,
                         stderr=f,
@@ -173,9 +185,27 @@ class ComfyUIProcessRunner(Runner):
             if process is not None:
                 os._exit(1)
 
+    # prepare workflow run dir
+    def _prepare_runtime_dir(self):
+        # create input and output dir if not exists
+        os.makedirs(self.input_dir, exist_ok=True)
+        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.temp_dir, exist_ok=True)
+
+        # merge in input files from workflow input dir
+        input_files = os.listdir(self.workflow.input_dir)
+        for input_file in input_files:
+            input_file_path = os.path.join(self.workflow.input_dir, input_file)
+            target = os.path.join(self.input_dir, input_file)
+            
+            # files in workflow run input dir should override files from workflow input dir
+            if not os.path.exists(target):
+                force_create_symlink(input_file_path, os.path.join(self.input_dir, input_file))
+
 
     def setup(self):
-        """ Setup the ComfyUI server and wait for it to be ready """
+        """ Setup runtime directory and the ComfyUI server and wait for it to be ready """
+        self._prepare_runtime_dir()
 
         # FIXME: create a process cache, allow reused of processes. 
         # FIXME: manage server lifecycle using a state machine
@@ -192,20 +222,20 @@ class ComfyUIProcessRunner(Runner):
             '--input-directory', self.input_dir,
             '--output-directory', self.output_dir,
             '--temp-directory', self.temp_dir,
-            '--extra-model-paths-config', f'{self.work_dir}/extra_model_paths.yaml',
+            '--extra-model-paths-config', self.workflow.extra_model_paths,
             '--verbose',
         ]
         
         # os.chdir(self.work_dir)
         self.process = self._launch_comfyui(args)
-        # self.proc = subprocess.Popen(command, capture_output=True, capture_error=True)
-        # subprocess.run(command, capture_output=True, capture_error=True)
 
         # check server status
         # url = f"http://{self.host}:{self.port}/status"
         while not self.comfyui_service.is_server_ready():
             logger.info(f"Waiting for ComfyUI server to be ready: {self.host}:{self.port}")
             time.sleep(5)
+
+        self._update_status("ready")
 
 
     def run(self):
@@ -233,7 +263,7 @@ class ComfyUIProcessRunner(Runner):
         
         url = f"http://{self.host}:{self.port}/prompt"
         response = requests.post(url, json={"prompt": workflow_config})
-        prompt_response = ComfyUIProcessRunner.PromptResponse(**response.json())
+        prompt_response = ComfyUIRunner.PromptResponse(**response.json())
         if prompt_response.node_errors and len(prompt_response.node_errors.keys()) > 0:
             logger.error(f"Error running workflow: {prompt_response.node_errors}")
             return
@@ -275,73 +305,20 @@ class ComfyUIProcessRunner(Runner):
                 json.dump(get_history_response_json, f)
 
             # workflow_run_db.put(self.workflow_run) 
-            return
+            self._update_status("running")
 
 
     def teardown(self):
         try:
             self.process.terminate()
-            self.process.wait(timeout=ComfyUIProcessRunner.PROC_SHUTDOWN_TIMEOUT_SEC) # wait for 5 seconds
+            self.process.wait(timeout=ComfyUIRunner.PROC_SHUTDOWN_TIMEOUT_SEC) # wait for 5 seconds
             returncode = self.process.poll()
             logger.info(f"Process terminated with return code: {returncode}")
             if returncode is None:
                 # process has not exit yet, force kill it
                 self.process.kill()
-
-            # terminate the sub python process launched by conda
-            import psutil
-            import signal
-            import sys
-
-            def get_conda_python_processes():
-                conda_python_path = self.workflow.python_venv.python_path
-                conda_python_processes = []
-
-                for proc in psutil.process_iter(['pid', 'name', 'exe']):
-                    try:
-                        if proc.info['exe'] is not None and os.path.samefile(proc.info['exe'], conda_python_path):
-                            conda_python_processes.append(proc.info)
-                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                        pass
-
-                return conda_python_processes
-
-            for p in get_conda_python_processes():
-                pid = p['pid']
-                if pid == os.getpid(): continue # dont kill current process
-                logger.info(f"Terminating python process: {pid}")
-                # FIXME: this could kill all python process launched by the same conda env. 
-                # TODO: workflow manage need to manage its own conda env as well.
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except Exception as e:
-                    logger.error(f"Error terminating process: {e}. Force killing the process.")
-                    # os.kill(pid, signal.SIGKILL)
-
         except Exception as e:
             logger.error(f"Error terminating process: {e}. Force killing the process.")
             self.process.kill()
-
-
-        # if reboot_path is None:
-        #     print("[bold red]ComfyUI is not installed.[/bold red]\n")
-        #     os._exit(process.pid)
-
-        # if not os.path.exists(reboot_path):
-        #     os._exit(process.pid)
-
-        # os.remove(reboot_path)
-
-        return 
-
-
-if __name__ == "__main__":
-    # Global data stores
-    # workflow_db = DataStore("workflow", data_model=Workflow, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
-    # workflow_run_db = DataStore("workflow_run", data_model=WorkflowRun, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
-    # workflow_db = DataStore("workflow", data_model=Workflow, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
-    # workflow_run_db = DataStore("workflow_run", data_model=WorkflowRun, store_path='/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/.db')
-    # workflow_scheduler = WorkflowScheduler(workflow_db, workflow_run_db)
-    # workflow_scheduler.schedule("e7b01fd3-dbbf-4b0b-8cd0-24702d68e6d0")
-
-    pass
+        finally:
+            self._update_status("terminated")

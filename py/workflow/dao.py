@@ -1,14 +1,12 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 import uuid
 import json
 import os
 
 from typing import Optional, List, Tuple, Dict
 
-from sqlmodel import Field, SQLModel, create_engine
+from sqlmodel import Field
 
-from workflow.in_mem_store import DataStore
-from workflow.utils import force_create_symlink
 
 
 class Dir(BaseModel):
@@ -16,23 +14,34 @@ class Dir(BaseModel):
     """
     dir_path: str
 
-
-
 class EnvVars(BaseModel):
     """  encapsulates an env var
     """
     env_var_list: List[Tuple[str, str]] 
 
-class BaseEnv(BaseModel):
-    """  encapsulates the env (code, env var) for a workflow
-    """
-    pass
 
-
-class PythonCondaEnv(BaseModel):
-    conda_env_path: str
-    python_path: Optional[str] = None 
+class RuntimeEnv(BaseModel):
+    venv_path: str
     env_vars: Optional[EnvVars] = None
+
+    @computed_field
+    def virtualenv_python_path(self) -> str:
+        # Reference: https://github.com/ray-project/ray/blob/80e832c6c68885f4b3f01a5f807e381bf99eb8dc/python/ray/_private/runtime_env/pip.py#L51
+        _WIN32 = os.name == "nt"
+        if _WIN32:
+            return os.path.join(self.venv_path, "Scripts", "python.exe")
+        else:
+            return os.path.join(self.venv_path, "bin", "python")
+
+    @computed_field
+    def virtualenv_activate_command(self) -> List[str]:
+        _WIN32 = os.name == "nt"
+        if _WIN32:
+            cmd = [os.path.join(self.venv_path, "Scripts", "activate.bat")]
+        else:
+            cmd = ["source", os.path.join(self.venv_path, "bin/activate")]
+        return cmd + ["1>&2", "&&"]
+
 
 
 class Dependency(BaseModel):
@@ -68,12 +77,43 @@ class FileDependency(BaseModel):
     """
     file_path: str
 
-
-class Inventory(BaseModel):
-    """ Physical file system inventory that contains all the dependencies
-    Inventory enforce opinionated folder structure for each type of dependency
+class Workspace(BaseModel):
+    """ Physical file system that contains all files and dependencies
+    Workspace enforce opinionated folder structure for each type of dependency
     """
     base_path: str
+
+    @computed_field
+    def base_code_path(self) -> str:
+        return f'{self.base_path}/ComfyUI'
+    
+    @computed_field
+    def module_path(self) -> str:
+        return f'{self.base_path}/modules'
+    
+    @computed_field
+    def model_path(self) -> str:
+        return f'{self.base_path}/models'
+    
+    @computed_field
+    def workflow_path(self) -> str:
+        return f'{self.base_path}/workflows'
+    
+    @computed_field
+    def workflow_run_path(self) -> str:
+        return f'{self.base_path}/workflow_runs'
+    
+    @computed_field
+    def database_file_path(self) -> str:
+        return f'{self.base_path}/workflow.db'
+
+
+class Inventory(BaseModel):
+    """ Abstarct inventory over physical workspace that contains all the dependencies
+    One physical workspace can have multiple inventories
+    """
+    workspace: Workspace
+    base_code: CodeDependency
     modules: Dict[str, CodeDependency] # {module name -> module dependency}
     models: Dict[str, Tuple[str, ModelDependency]] # {model category -> (model name, model dependency)}
 
@@ -128,6 +168,7 @@ def _create_symlink(src, dst):
     os.symlink(src=src, dst=tmp_link, target_is_directory=True)
     os.rename(tmp_link, dst)
 
+
 class Workflow(BaseModel):
     """ Apps can be installed and expands into a workflow
     Apps:
@@ -154,7 +195,7 @@ class Workflow(BaseModel):
     workspace_config: ComfyUIWorkspaceConfig
 
     # dependencies
-    python_venv: PythonCondaEnv
+    python_venv: RuntimeEnv
     dependency_config: ComfyUIDependencyConfig
 
     @property
@@ -180,11 +221,18 @@ class Workflow(BaseModel):
     @property
     def custom_model_dir(self):
         return f'{self.workflow_dir}/{self.workspace_config.custom_model_dir}'
+    
+    @property
+    def extra_model_paths(self):
+        return f'{self.workflow_dir}/extra_model_paths.yaml'
 
     def comfyui_path(self):
         return self.dependency_config.base_code
 
     def prepare_workspace(self, inventory: Inventory):
+        """ Prepare directory structure for the workflow
+        Use (symplink) dependencies from the inventory (also validate the dependencies are correct)
+        """
         # TODO: validate workspace
         _validate_dir(self.workflow_dir)
         # _validate_dir(self.workspace_config.custom_node_dir, create=True)
@@ -202,13 +250,13 @@ class Workflow(BaseModel):
             return True
 
         assert _check_code_module(
-            existing_code_module=inventory.modules['ComfyUI'],
+            existing_code_module=inventory.base_code,
             required_code_module=self.dependency_config.base_code
         ), 'Base code module does not match'
         # link to ComfyUI
         _create_symlink(
-                f'{inventory.base_path}/modules/ComfyUI', 
-                f'{self.workflow_dir}/ComfyUI')
+                src=inventory.workspace.base_code_path, 
+                dst=self.main_module_dir)
 
         for custom_node in self.dependency_config.custom_nodes:
             inventory.check_module_exist(custom_node.name)
@@ -221,8 +269,8 @@ class Workflow(BaseModel):
         # FIXME: for simplicity, it suffices to create a symbolic link to the root modules directory
         # TODO: create virtual inventory if necessary in the future
         _create_symlink(
-            f'{inventory.base_path}/modules', 
-            f'{self.workflow_dir}/{self.workspace_config.custom_node_dir}')
+            src=inventory.workspace.module_path, 
+            dst=f'{self.workflow_dir}/{self.workspace_config.custom_node_dir}')
 
 
         # Custom models
@@ -242,13 +290,13 @@ class Workflow(BaseModel):
         # Create symbolic link to custom models
         # FIXME: for simplicity, it suffices to create a symbolic link to the root model directory
         custom_model_dir = f'{self.workflow_dir}/{self.workspace_config.custom_model_dir}'
-        _create_symlink(f'{inventory.base_path}/models', custom_model_dir)
+        _create_symlink(inventory.workspace.model_path, custom_model_dir)
 
         with open(f'{self.workflow_dir}/manifest.json', 'w') as f:
             f.write(self.model_dump_json())
 
         import yaml
-        extra_model_paths = {
+        extra_model_paths_config = {
             'comfyui': {
                 'base_path': f'{self.workflow_dir}/ComfyUI',
                 'custom_nodes': f'{self.custom_node_dir}',
@@ -263,82 +311,19 @@ class Workflow(BaseModel):
                 'vae': f'{self.custom_model_dir}/vae/'
             }
         } 
-        with open(f'{self.workflow_dir}/extra_model_paths.yaml', 'w') as f:
-            yaml_data = yaml.dump(extra_model_paths, default_flow_style=False)
+        with open(self.extra_model_paths, 'w') as f:
+            yaml_data = yaml.dump(extra_model_paths_config, default_flow_style=False)
             f.write(yaml_data)
         
-    def launch(self):
-        pass
-
-
-
-class WorkflowRun(BaseModel):
-    id: Optional[str] = Field(default=None, primary_key=True)
-    workflow: Optional[Workflow] = Field(description='workflow associated with this run') 
-
-    # Runtime directories override
-    work_dir: Optional[Dir] = None # ComfyUI workspace
-    input_dir: Optional[Dir] = None # deprecated
-    output_dir: Optional[Dir] = None
-
-    # Runtime info
-    status: Optional[str] = None
-    start_time: str | None = None
-    end_time: str | None = None
-
-    def prepare_workspace(self, workflow: Workflow):
-
-        # merge in input files from workflow input dir
-        input_files = os.listdir(self.workflow.input_dir)
-        for input_file in input_files:
-            input_file_path = os.path.join(self.workflow.input_dir, input_file)
-            target = os.path.join(self.input_dir, input_file)
-            
-            # files in workflow run input dir should override files from workflow input dir
-            if not os.path.exists(target):
-                force_create_symlink(input_file_path, os.path.join(self.input_dir, input_file))
-
-        # TODO: create output dir
-            
-
-def run_workflow():
-    workflow_1 = Workflow(
-        id=str(uuid.uuid4()),
-        name="workflow_1", 
-        description="workflow 1", 
-        env=PythonCondaEnv(conda_env_path="/home/ruoyu.huang/miniconda3/envs/xiaoapp"),
-        load_model_dir=Dir(dir_path="/home/ruoyu.huang/workspace/xiaoapp/models"),
-        metadata_dir=Dir(dir_path="/home/ruoyu.huang/workspace/xiaoapp/metadata")
-    )
-
-    workflow_db = DataStore("workflow", data_model=Workflow)
-    workflow_db.put(workflow_1)
-    # print(workflow_db.get(workflow_1.id))
-    
-    workflow_run_db = DataStore("workflow_run", data_model=WorkflowRun)
-    workflow_run = WorkflowRun(
-        id=str(uuid.uuid4()),
-        workflow_id=workflow_1.id,
-        status="running",
-        start_time="2021-09-01 12:00:00",
-        end_time="2021-09-01 12:01:00",
-        output_dir=Dir(dir_path="/home/ruoyu.huang/workspace/xiaoapp/output"),
-        log_dir=Dir(dir_path="/home/ruoyu.huang/workspace/xiaoapp/logs")
-    )
-    workflow_run_db.put(workflow_run)
-    print(workflow_run_db.scan(lambda k, v: v.workflow_id == workflow_1.id))
-
-
 
 def reconstruct_inventory(base_path):
     # build inventory
 
     import os
     import subprocess
-    import json
-    # list all subfolders in the base_path
-    
 
+    workspace = Workspace(base_path=base_path)
+    
     def reconstruct_module(module_path):
         # git remote get-url --push origin
         # git branch --show-current
@@ -356,7 +341,7 @@ def reconstruct_inventory(base_path):
 
     modules = {}
     
-    modules_base_path = f"{base_path}/modules"
+    modules_base_path = workspace.module_path 
     for sub_dir in os.listdir(modules_base_path):
         if os.path.isdir(os.path.join(modules_base_path, sub_dir)):
             if sub_dir == '__pycache__':
@@ -365,7 +350,7 @@ def reconstruct_inventory(base_path):
             modules[sub_dir] = reconstruct_module(os.path.join(modules_base_path, sub_dir))
 
     models = {}
-    models_base_path = f'{base_path}/models'
+    models_base_path = workspace.model_path 
     for root, dirs, files in os.walk(models_base_path):
         for model_file in files:
             model_path = os.path.join(root, model_file)
@@ -385,10 +370,11 @@ def reconstruct_inventory(base_path):
 
 
     inventory = Inventory(
-        base_path=base_path, 
+        workspace=workspace,
+        base_code=reconstruct_module(workspace.base_code_path),
         modules=modules,
         models=models)
-    breakpoint()
+
     with open(f'{base_path}/inventory.json', 'w') as f:
         f.write(inventory.model_dump_json())
 
@@ -416,7 +402,8 @@ def reconstruct_workflow(base_path):
         for m in dependency['modules']:
             modules.append(CodeDependency(**m))
     
-    dependency_config = ComfyUIDependencyConfig(base_code=code, 
+    dependency_config = ComfyUIDependencyConfig(
+                            base_code=code, 
                             custom_nodes=modules, 
                             custom_models=models)
 
@@ -427,9 +414,7 @@ def reconstruct_workflow(base_path):
         description="All in one control net", 
         workflow_dir=base_path,
         workspace_config=ComfyUIWorkspaceConfig(),
-        python_venv=PythonCondaEnv(
-            conda_env_path="/home/ruoyu.huang/miniconda3/envs/xiaoapp",
-            python_path='/home/ruoyu.huang/miniconda3/envs/xiaoapp/bin/python'),
+        python_venv=RuntimeEnv(venv_path="/home/ruoyu.huang/workspace/xiaoapp/venv"),
         dependency_config=dependency_config
     )
     
@@ -441,18 +426,3 @@ def get_workflow_manifest(workflow_dir: str):
     with open(manifest_path, 'r') as f:
         workflow_to_run = Workflow.model_validate(json.load(f))
         return workflow_to_run
-
-if __name__ == "__main__":
-    base_path = "/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace"
-    inventory = reconstruct_inventory(base_path)
-    workflow_base_path = "/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace/workflows/all_in_one_controlnet"
-    workflow = reconstruct_workflow(workflow_base_path)
-    print(workflow)
-    workflow.prepare_workspace(inventory)
-    
-
-
-
-
-
-
