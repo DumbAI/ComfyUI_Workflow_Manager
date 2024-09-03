@@ -1,8 +1,10 @@
 # ORM layer
 from enum import Enum
+from typing import List
 from sqlmodel import SQLModel, Field, create_engine, Session, select
 import os
 from pydantic import computed_field
+from sqlalchemy import JSON
 
 # TODO: pointing to the workflow.db on the workspace
 DATABASE_URL = "sqlite:////home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace/workflow.db"
@@ -28,13 +30,21 @@ class WorkflowRunStatus(Enum):
     TERMINATED = "terminated"
     FAILED = "failed"
 
+
+
+
 class WorkflowRunRecord(SQLModel, table=True):
     # a record of a workflow run in database
     id: int = Field(primary_key=True)
     workflow_id: int # foreign key to WorkflowRecord
+
     status: str
     created_at: str
     updated_at: str | None = None
+
+    # Workflow inputs
+    input_files_json: str | None = None # file name -> file path
+    input_override_json: str | None = None
 
     # 
     # Runtime metadata, created after handshake with the workflow run process

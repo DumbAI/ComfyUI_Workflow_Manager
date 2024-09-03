@@ -2,10 +2,14 @@ from pydantic import BaseModel, Field, computed_field
 import uuid
 import json
 import os
+import subprocess
+import shutil
 
 from typing import Optional, List, Tuple, Dict
 
 from sqlmodel import Field
+
+from .utils import run_command
 
 
 
@@ -107,6 +111,10 @@ class Workspace(BaseModel):
     def database_file_path(self) -> str:
         return f'{self.base_path}/workflow.db'
 
+    @computed_field
+    def user_space_path(self) -> str:
+        return f'{self.base_path}/user_space'
+
 
 class Inventory(BaseModel):
     """ Abstarct inventory over physical workspace that contains all the dependencies
@@ -164,6 +172,10 @@ def _validate_dir(dir_path, create=False):
 
 
 def _create_symlink(src, dst):
+    dir = os.path.dirname(dst)
+    if not os.path.exists(dst):
+        os.makedirs(dir, exist_ok=True)
+
     tmp_link = f'{dst}.tmp'
     os.symlink(src=src, dst=tmp_link, target_is_directory=True)
     os.rename(tmp_link, dst)
@@ -191,9 +203,6 @@ class Workflow(BaseModel):
     description: str = Field(default='comfyui workflow', description='workflow description')
     workflow_dir: str = Field(description='workflow base directory')
 
-    # workspace structure
-    workspace_config: ComfyUIWorkspaceConfig
-
     # dependencies
     python_venv: RuntimeEnv
     dependency_config: ComfyUIDependencyConfig
@@ -204,30 +213,44 @@ class Workflow(BaseModel):
 
     @property
     def input_dir(self):
-        return f'{self.workflow_dir}/{self.workspace_config.input_dir}'
+        return f'{self.workflow_dir}/input'
     
     @property
     def output_dir(self):
-        return f'{self.workflow_dir}/{self.workspace_config.output_dir}'
+        return f'{self.workflow_dir}/output'
     
     @property
     def temp_dir(self):
-        return f'{self.workflow_dir}/{self.workspace_config.temp_dir}'
+        return f'{self.workflow_dir}/temp'
     
     @property
     def custom_node_dir(self):
-        return f'{self.workflow_dir}/{self.workspace_config.custom_node_dir}'
+        return f'{self.workflow_dir}/ComfyUI/custom_nodes'
     
     @property
     def custom_model_dir(self):
-        return f'{self.workflow_dir}/{self.workspace_config.custom_model_dir}'
+        return f'{self.workflow_dir}/ComfyUI/models'
     
     @property
     def extra_model_paths(self):
         return f'{self.workflow_dir}/extra_model_paths.yaml'
 
-    def comfyui_path(self):
-        return self.dependency_config.base_code
+
+    def _clone_main_module(self):
+
+        if os.path.exists(self.main_module_dir):
+            # remove existing directory
+            
+            if os.path.isfile(self.main_module_dir) or os.path.islink(self.main_module_dir):
+                os.remove(self.main_module_dir)
+            elif os.path.isdir(self.main_module_dir):
+                shutil.rmtree(self.main_module_dir)
+            else:
+                raise ValueError(f'Invalid file type: {self.main_module_dir}')
+
+        main_module = self.dependency_config.base_code
+        run_command(["git", "clone", main_module.github_url, self.main_module_dir])
+        run_command(["git", "checkout", main_module.commit_sha], cwd=self.main_module_dir)
 
     def prepare_workspace(self, inventory: Inventory):
         """ Prepare directory structure for the workflow
@@ -235,11 +258,10 @@ class Workflow(BaseModel):
         """
         # TODO: validate workspace
         _validate_dir(self.workflow_dir)
-        # _validate_dir(self.workspace_config.custom_node_dir, create=True)
-        # _validate_dir(self.workspace_config.custom_model_dir, create=True)
-        _validate_dir(f'{self.workflow_dir}/{self.workspace_config.input_dir}', create=True)
-        _validate_dir(f'{self.workflow_dir}/{self.workspace_config.output_dir}', create=True)
-        _validate_dir(f'{self.workflow_dir}/{self.workspace_config.temp_dir}', create=True)
+        _validate_dir(f'{self.input_dir}', create=True)
+        _validate_dir(f'{self.output_dir}', create=True)
+        _validate_dir(f'{self.temp_dir}', create=True)
+
 
         # Customer Modules
         def _check_code_module(existing_code_module, required_code_module):
@@ -248,15 +270,13 @@ class Workflow(BaseModel):
             assert existing_code_module.github_url == required_code_module.github_url, 'Github url does not match'
             assert existing_code_module.commit_sha == required_code_module.commit_sha, 'Commit sha does not match'
             return True
-
+        
         assert _check_code_module(
             existing_code_module=inventory.base_code,
             required_code_module=self.dependency_config.base_code
         ), 'Base code module does not match'
-        # link to ComfyUI
-        _create_symlink(
-                src=inventory.workspace.base_code_path, 
-                dst=self.main_module_dir)
+        # clone ComfyUI base repo
+        self._clone_main_module()
 
         for custom_node in self.dependency_config.custom_nodes:
             inventory.check_module_exist(custom_node.name)
@@ -266,11 +286,12 @@ class Workflow(BaseModel):
             ), f'Custom node {custom_node.name} does not match'
             
         # Create symbolic link to custom modules
-        # FIXME: for simplicity, it suffices to create a symbolic link to the root modules directory
         # TODO: create virtual inventory if necessary in the future
-        _create_symlink(
-            src=inventory.workspace.module_path, 
-            dst=f'{self.workflow_dir}/{self.workspace_config.custom_node_dir}')
+        custom_modules = [f.path for f in os.scandir(inventory.workspace.module_path) if f.is_dir()]
+        for module in custom_modules:
+            _create_symlink(
+                src=module, 
+                dst=f'{self.main_module_dir}/custom_nodes/{os.path.basename(module)}')
 
 
         # Custom models
@@ -282,35 +303,52 @@ class Workflow(BaseModel):
             assert existing_model.category == required_model.category, 'Category does not match'
             return True
 
+        
+        # FIXME: workflow should provide an inclusive list of custom models
+        # FIXME: install model to inventory on demand 
+        # for the time being, we assume all models in the custom_model_dir are used
+        self.dependency_config.custom_models = [model for _, model in inventory.models.values()] 
+
         for custom_model in self.dependency_config.custom_models:
             inventory.check_model_exist(custom_model.rel_file_path)
             _, model_dependency = inventory.models[custom_model.rel_file_path]
             assert _check_model(model_dependency, custom_model), f'Custom model {custom_model.rel_file_path} does not match'
 
         # Create symbolic link to custom models
-        # FIXME: for simplicity, it suffices to create a symbolic link to the root model directory
-        custom_model_dir = f'{self.workflow_dir}/{self.workspace_config.custom_model_dir}'
-        _create_symlink(inventory.workspace.model_path, custom_model_dir)
+        for model in self.dependency_config.custom_models:
+            _create_symlink(
+                src=f'{inventory.workspace.model_path}/{model.rel_file_path}', 
+                dst=f'{self.main_module_dir}/models/{model.rel_file_path}')
+        
 
         with open(f'{self.workflow_dir}/manifest.json', 'w') as f:
             f.write(self.model_dump_json())
 
         import yaml
+        
+
         extra_model_paths_config = {
             'comfyui': {
                 'base_path': f'{self.workflow_dir}/ComfyUI',
-                'custom_nodes': f'{self.custom_node_dir}',
-                'checkpoints': f'{self.custom_model_dir}/checkpoints/',
-                'clip': f'{self.custom_model_dir}/clip/',
-                'clip_vision': f'{self.custom_model_dir}/clip_vision/',
-                'configs': f'{self.custom_model_dir}/configs/',
-                'controlnet': f'{self.custom_model_dir}/controlnet/',
-                'embeddings': f'{self.custom_model_dir}/embeddings/',
-                'loras': f'{self.custom_model_dir}/loras/',
-                'upscale_models': f'{self.custom_model_dir}/upscale_models/',
-                'vae': f'{self.custom_model_dir}/vae/'
+                # 'custom_nodes': f'{self.custom_node_dir}',
+                # 'checkpoints': f'{self.custom_model_dir}/checkpoints/',
+                # 'clip': f'{self.custom_model_dir}/clip/',
+                # 'clip_vision': f'{self.custom_model_dir}/clip_vision/',
+                # 'configs': f'{self.custom_model_dir}/configs/',
+                # 'controlnet': f'{self.custom_model_dir}/controlnet/',
+                # 'embeddings': f'{self.custom_model_dir}/embeddings/',
+                # 'loras': f'{self.custom_model_dir}/loras/',
+                # 'upscale_models': f'{self.custom_model_dir}/upscale_models/',
+                # 'vae': f'{self.custom_model_dir}/vae/'
             }
         } 
+
+        # FIXME: list all subfolders in the custom_model_dir
+        # for model_category in os.listdir(self.custom_model_dir):
+        #     if os.path.isdir(os.path.join(self.custom_model_dir, model_category)):
+        #         print(f'Found model category: {model_category}')
+        #         extra_model_paths_config['comfyui'][model_category] = f'{self.custom_model_dir}/{model_category}/'
+
         with open(self.extra_model_paths, 'w') as f:
             yaml_data = yaml.dump(extra_model_paths_config, default_flow_style=False)
             f.write(yaml_data)
@@ -390,7 +428,7 @@ def reconstruct_workflow(base_path):
         **{
             "name": "ComfyUI",
             "github_url": "git@github.com:comfyanonymous/ComfyUI.git",
-            "commit_sha": "b8ffb2937f9daeaead6e9225f8f5d1dde6afc577",
+            "commit_sha": "f1c2301697cb1cd538f8d4190741935548bb6734",
         })
     
     models = []
@@ -411,9 +449,8 @@ def reconstruct_workflow(base_path):
         id=str(uuid.uuid4()),
         name="all_in_one_controlnet", 
         category="comfyui",
-        description="All in one control net", 
+        description="Example workflow for comfyui", 
         workflow_dir=base_path,
-        workspace_config=ComfyUIWorkspaceConfig(),
         python_venv=RuntimeEnv(venv_path="/home/ruoyu.huang/workspace/xiaoapp/venv"),
         dependency_config=dependency_config
     )

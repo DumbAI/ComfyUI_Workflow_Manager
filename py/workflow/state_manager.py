@@ -4,10 +4,13 @@
 """
 
 from datetime import datetime
+from typing import Dict
+import json
 
 from .dao import Workspace, reconstruct_workflow, reconstruct_inventory, get_workflow_manifest
 from .controller import ComfyUIRunner
 from .utils import logger
+
 
 from .database import *
 
@@ -23,7 +26,7 @@ def launch_workflow():
     # Assume an app is installed in this path, below is the installation logic
     #
     # TODO: add records in database
-    workflow_base_path = "/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace/workflows/all_in_one_controlnet"
+    workflow_base_path = "/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace/workflows/sticker"
     workflow = reconstruct_workflow(workflow_base_path)
     # Expand workflow into a workspace
     # Write the workflow manifest to workspace
@@ -50,10 +53,20 @@ def launch_workflow():
     # 
     # Launch the workflow process
     # TODO: create workflow run record in DB
+    input_override = {
+        "326": {
+            "inputs": {
+                "image": "headshot.png"
+            }
+        },
+    }
     workflow_run = WorkflowRunRecord(
         workflow_id=workflow_record_to_run.id,
         status=WorkflowRunStatus.PENDING.value,
         created_at=datetime.now().isoformat(),
+        # TODO: input files should points to folder on the workspace, relative to 'user_space' folder
+        input_files_json=json.dumps({"headshot.png": "taylor-swift.jpeg"}),
+        input_override_json=json.dumps(input_override)
     )
     create_workflow_run(workflow_run)
 
@@ -68,8 +81,9 @@ def launch_workflow():
             callback=update_workflow_run
             )
         runner.setup()
-        breakpoint()
+        runner.run()
     
+        breakpoint()
         runner.teardown()
 
 

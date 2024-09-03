@@ -13,6 +13,9 @@ import subprocess
 import random
 import atexit
 import signal
+import json
+import shutil
+import collections
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Tuple, Callable
@@ -114,6 +117,7 @@ class ComfyUIRunner(Runner):
         self.input_dir = self.workflow_run.input_dir
         self.output_dir = self.workflow_run.output_dir
         self.temp_dir = self.workflow_run.temp_dir
+        self.input_override = json.loads(self.workflow_run.input_override_json) if self.workflow_run.input_override_json else None
 
 
         # run ComfyUI main process
@@ -141,19 +145,15 @@ class ComfyUIRunner(Runner):
 
         # TODO: pass CUDA_VISIBLE_DEVICES from input
         python_env = {
-            "PYTHONENCODING":"utf-8", # is this required?
+            "PYTHONENCODING": "utf-8", # is this required?
             'PYTHONPATH': self.workflow.main_module_dir, # points to ComfyUI, so that main module can be found
             'CUDA_VISIBLE_DEVICES': '0'
         }
 
-        # To minimize the possibility of leaving residue in the tmp directory, use files instead of directories.
-        # reboot_path = None
-        # self.reboot_path = os.path.join(session_path, ".reboot")
-
         extra_args = extra_args if extra_args is not None else []
         
         
-        command = f' {python_path} -m main ' + ' '.join(extra_args)
+        command = f'{python_path} -m main ' + ' '.join(extra_args)
         process = None
 
         try:
@@ -165,6 +165,7 @@ class ComfyUIRunner(Runner):
                         stderr=f,
                         text=True,
                         env=python_env,
+                        cwd=self.work_dir,
                         encoding="utf-8",
                         shell=True,  # win32 only
                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,  # win32 only
@@ -176,6 +177,7 @@ class ComfyUIRunner(Runner):
                         text=True,
                         env=python_env,
                         encoding="utf-8",
+                        cwd=self.work_dir,
                         stdout=f,
                         stderr=f,
                     )
@@ -191,6 +193,15 @@ class ComfyUIRunner(Runner):
         os.makedirs(self.input_dir, exist_ok=True)
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.temp_dir, exist_ok=True)
+
+        # copy workflow run input files to input dir
+        if self.workflow_run.input_files_json:
+            input_files = json.loads(self.workflow_run.input_files_json)
+            for name, file_path in input_files.items():
+                target = os.path.join(self.input_dir, name)
+                source = os.path.join(self.workspace.user_space_path, file_path)
+                # copy file to input dir
+                shutil.copy(source, target)
 
         # merge in input files from workflow input dir
         input_files = os.listdir(self.workflow.input_dir)
@@ -240,22 +251,27 @@ class ComfyUIRunner(Runner):
 
     def run(self):
         workflow_config = None
-        workflow_api_config_file = f'{self.work_dir}/workflow_api.json'
+        workflow_api_config_file = f'{self.workflow.workflow_dir}/workflow_api.json'
         with open(workflow_api_config_file, 'r') as f:
             workflow_config = json.load(f)
 
         # override input
-        input_override_data = None
-        if os.path.exists(f'{self.workflow_run.input_dir.dir_path}'):
+        if self.input_override:
+            def update(d, u):
+                for k, v in u.items():
+                    if isinstance(v, collections.abc.Mapping):
+                        d[k] = update(d.get(k, {}), v)
+                    else:
+                        d[k] = v
+                return d
+            workflow_config = update(workflow_config, self.input_override)
             # override input value and input files
-            with open(f'{self.workflow_run.input_dir.dir_path}/input_override.json', 'r') as f:
-                input_override_data = json.load(f)
-                for k, v in input_override_data.items():
-                    inputs = v.get('inputs', None)
-                    if inputs is not None:
-                        # TODO: only update fields that are in the input_override
-                        # keep the rest of the input values unchanged
-                        workflow_config[k]['inputs'].update(inputs)
+            # for k, v in self.input_override.items():
+            #     inputs = v.get('inputs', None)
+            #     if inputs is not None:
+            #         # TODO: only update fields that are in the input_override
+            #         # keep the rest of the input values unchanged
+            #         workflow_config[k]['inputs'].update(inputs)
             
         if workflow_config is None:
             logger.error(f"Error loading workflow config from {workflow_api_config_file}")
@@ -267,6 +283,9 @@ class ComfyUIRunner(Runner):
         if prompt_response.node_errors and len(prompt_response.node_errors.keys()) > 0:
             logger.error(f"Error running workflow: {prompt_response.node_errors}")
             return
+        
+        self._update_status("running")
+        
         
         get_response = requests.get(url)
         get_response_json = get_response.json()
@@ -285,6 +304,13 @@ class ComfyUIRunner(Runner):
                 continue
             
             status = prompt_status.get('status', None)
+
+            # TODO: comfyui response is not very clear, need to improve
+            if status.get('status_str', None) == 'error':
+                logger.error(f"[Error]: running workflow: {status}")
+                self._update_status("failed")
+                break
+                
             if status is None or not status.get('completed', False):
                 # pull status again
                 logger.info(f"Prompt {prompt_id} Workflow not completed yet: {status}")
@@ -293,19 +319,19 @@ class ComfyUIRunner(Runner):
             
             if status.get('status_str', None) == 'success':
                 logger.info(f"Workflow completed successfully: {status}")
+                self._update_status("completed")
             else: 
                 # Better error handling
                 logger.error(f"[Error]: running workflow: {status}")
+                self._update_status("failed")
 
-            self.workflow_run.status = status.get('status_str', None)
-            output_dir = self.workflow_run.output_dir.dir_path
+            output_dir = self.workflow_run.output_dir
             prompt_history_file = os.path.join(output_dir, f'prompt_history_{prompt_id}.json')
             # write prompt history to file
             with open(prompt_history_file, 'w') as f:
                 json.dump(get_history_response_json, f)
+            break
 
-            # workflow_run_db.put(self.workflow_run) 
-            self._update_status("running")
 
 
     def teardown(self):
