@@ -28,6 +28,10 @@ from workflow.utils import logger, force_create_symlink
 import requests
 from queue import Queue
 
+from .dao import Workspace, get_workflow_manifest
+from .utils import logger
+from .database import *
+
 # a global registry of all subprocesses
 subprocesses = Queue()
 
@@ -348,3 +352,44 @@ class ComfyUIRunner(Runner):
             self.process.kill()
         finally:
             self._update_status("terminated")
+
+
+def run_workflow(workspace: Workspace, workflow: WorkflowRecord, input_files: Dict[str, str] = {}):
+    # workflow manifest
+    workflow_to_run = get_workflow_manifest(workflow.workflow_dir)
+
+    # 
+    # Launch the workflow process
+    # TODO: create workflow run record in DB
+    input_override = {
+        "326": {
+            "inputs": {
+                "image": "headshot.png"
+            }
+        },
+    }
+    workflow_run = WorkflowRunRecord(
+        workflow_id=workflow.id,
+        status=WorkflowRunStatus.PENDING.value,
+        created_at=datetime.now().isoformat(),
+        # TODO: input files should points to folder on the workspace, relative to 'user_space' folder
+        input_files_json=json.dumps(input_files),
+        input_override_json=json.dumps(input_override)
+    )
+    workflow_run = create_workflow_run(workflow_run)
+
+    # scan workflow_run queue, and launch workflow process
+    # pending_workflow_runs = list_workflow_runs(lambda v: v.status == WorkflowRunStatus.PENDING.value)
+    # for run in pending_workflow_runs:
+    logger.info(f"Launching workflow run: {workflow_run.id}")
+    runner = ComfyUIRunner(
+        workspace=workspace,
+        workflow=workflow_to_run,
+        workflow_run=workflow_run,
+        callback=update_workflow_run
+        )
+    runner.setup()
+    runner.run()
+    runner.teardown()
+
+    return workflow_run

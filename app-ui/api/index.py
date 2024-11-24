@@ -23,7 +23,7 @@ def launch_workflow(workflow_id: str):
     workflow_to_run = wf.get_workflow_manifest(workflow_record_to_run.workflow_dir)
 
     # Start workflow process runner
-    runner = wf.ComfyUIProcessRunner(workflow_to_run)
+    runner = wf.ComfyUIRunner(workflow_to_run)
     runner.setup()
 
     # TODO: load the workflow_api.json
@@ -42,7 +42,7 @@ def launch_workflow(workflow_id: str):
 def launch_workflow(workflow_id: str, run_id: str):
     workflow_record_to_run = wf.get_workflow_by_id(workflow_id)
     workflow_to_run = wf.get_workflow_manifest(workflow_record_to_run.workflow_dir)
-    runner = wf.ComfyUIProcessRunner(workflow_to_run)
+    runner = wf.ComfyUIRunner(workflow_to_run)
     runner.setup()
 
     # TODO: load the workflow_api.json

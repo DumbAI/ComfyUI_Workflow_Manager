@@ -7,6 +7,7 @@ from pydantic import computed_field
 from sqlalchemy import JSON
 
 # TODO: pointing to the workflow.db on the workspace
+# FIXME: database access should be attached to the workspace
 DATABASE_URL = "sqlite:////home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace/workflow.db"
 engine = create_engine(DATABASE_URL, echo=True)
 
@@ -108,6 +109,7 @@ def create_workflow_run(workflow_run_record: WorkflowRunRecord):
         session.add(workflow_run_record)
         session.commit()
         session.refresh(workflow_run_record)
+        return workflow_run_record
 
 def update_workflow_run(workflow_run_record: WorkflowRunRecord):
     with Session(engine) as session:
@@ -115,7 +117,7 @@ def update_workflow_run(workflow_run_record: WorkflowRunRecord):
         session.commit()
         session.refresh(workflow_run_record)
 
-def scan_workflow_runs(filter_fn):
+def list_workflow_runs(filter_fn):
     with Session(engine) as session:
         stmt = select(WorkflowRunRecord)
         workflow_runs = session.exec(stmt)

@@ -1,8 +1,13 @@
-from .database import init_db, scan_workflow_runs
+from .database import init_db, list_workflows, list_workflow_runs
 
 
 if __name__ == "__main__":
     init_db()
-    workflow_runs = scan_workflow_runs(lambda v: True)
+
+    workflows = list_workflows()
+    for workflow in workflows:
+        print(f'[INFO] Workflow: {workflow}')
+
+    workflow_runs = list_workflow_runs(lambda v: True)
     for workflow_run in workflow_runs:
-        print(f'Workflow run: {workflow_run}')
+        print(f'[INFO] Workflow run: {workflow_run}')
