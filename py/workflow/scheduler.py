@@ -28,7 +28,7 @@ os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 class ComfyWorkflow(Workflow):
     def __call__(self, request: JobRequest) -> JobResponse:
         print(f'Processing job {request}')
-
+        
         # FIXME: workflow should be already installed in the workspace
         base_path = "/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace"
         workspace = Workspace(base_path=base_path)
@@ -53,14 +53,35 @@ class ComfyWorkflow(Workflow):
         with open(download_file_path, 'wb') as f:
             f.write(input_file.content.read())
         
+        # Resolve input override
+        input_override = request.Params.get('input_override', {})
+        workflow_input_override_json_file = f'{workflow_record_to_run.workflow_dir}/input_override.json'
+        override_template = {}
+        with open(workflow_input_override_json_file, 'r') as f:
+            workflow_input_override_json = json.load(f)
+            override_value = workflow_input_override_json.get('override_value', {}).update(input_override)
+            override_template=workflow_input_override_json.get('override_template', {})
+            # recursively update the input value in override template
+            def update_input_value(override_value, override_template):
+                for k, v in override_template.items():
+                    if isinstance(v, dict):
+                        update_input_value(override_value, v)
+                    else:
+                        if v in override_value:
+                            override_template[k] = override_value[v]
+            update_input_value(
+                override_value, 
+                override_template
+            )
+
+
         # Launch workflow
         print(f'Launching workflow {workflow_record_to_run}')
         workflow_run = run_workflow(
             workspace, 
             workflow_record_to_run,
-            input_files={
-                "headshot.png": download_file_path
-                }
+            input_files=[download_file_path],
+            input_override=override_template
         )
         print(workflow_run)
 

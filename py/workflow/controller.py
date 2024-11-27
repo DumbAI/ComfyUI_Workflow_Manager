@@ -201,11 +201,13 @@ class ComfyUIRunner(Runner):
         # copy workflow run input files to input dir
         if self.workflow_run.input_files_json:
             input_files = json.loads(self.workflow_run.input_files_json)
-            for name, file_path in input_files.items():
-                target = os.path.join(self.input_dir, name)
-                source = os.path.join(self.workspace.user_space_path, file_path)
+            for file_path in input_files:
+                # name = os.path.basename(file_path)
+                # target_path = os.path.join(self.input_dir, name)
+                # source = os.path.join(self.workspace.user_space_path, file_path)
+
                 # copy file to input dir
-                shutil.copy(source, target)
+                shutil.copy(file_path, self.input_dir)
 
         # merge in input files from workflow input dir
         input_files = os.listdir(self.workflow.input_dir)
@@ -354,20 +356,19 @@ class ComfyUIRunner(Runner):
             self._update_status("terminated")
 
 
-def run_workflow(workspace: Workspace, workflow: WorkflowRecord, input_files: Dict[str, str] = {}):
+def run_workflow(workspace: Workspace, workflow: WorkflowRecord, 
+                 input_files: List[str] = [], input_override: Dict[str, Dict] = {}):
     # workflow manifest
     workflow_to_run = get_workflow_manifest(workflow.workflow_dir)
 
-    # 
     # Launch the workflow process
-    # TODO: create workflow run record in DB
-    input_override = {
-        "326": {
-            "inputs": {
-                "image": "headshot.png"
-            }
-        },
-    }
+    # input_override = {
+    #     "326": {
+    #         "inputs": {
+    #             "image": "headshot.png"
+    #         }
+    #     },
+    # }
     workflow_run = WorkflowRunRecord(
         workflow_id=workflow.id,
         status=WorkflowRunStatus.PENDING.value,

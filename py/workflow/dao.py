@@ -89,14 +89,17 @@ class Workspace(BaseModel):
 
     @computed_field
     def base_code_path(self) -> str:
+        # ComfyUI code base
         return f'{self.base_path}/ComfyUI'
     
     @computed_field
     def module_path(self) -> str:
+        # store custom modules
         return f'{self.base_path}/modules'
     
     @computed_field
     def model_path(self) -> str:
+        # store custom models
         return f'{self.base_path}/models'
     
     @computed_field
@@ -262,6 +265,10 @@ class Workflow(BaseModel):
         _validate_dir(f'{self.output_dir}', create=True)
         _validate_dir(f'{self.temp_dir}', create=True)
 
+        # Prepare workflow directory
+        # 1) Clone ComfyUI base repo
+        # 2) Create symbolic link (inside ComfyUI dir) for custom modules, linking to custom modules in workspace inventory
+        # 3) Create symbolic link (inside ComfyUI dir) for custom models, linking to models in workspace inventory
 
         # Customer Modules
         def _check_code_module(existing_code_module, required_code_module):
@@ -277,6 +284,7 @@ class Workflow(BaseModel):
         ), 'Base code module does not match'
         # clone ComfyUI base repo
         self._clone_main_module()
+
 
         for custom_node in self.dependency_config.custom_nodes:
             inventory.check_module_exist(custom_node.name)
@@ -330,16 +338,6 @@ class Workflow(BaseModel):
         extra_model_paths_config = {
             'comfyui': {
                 'base_path': f'{self.workflow_dir}/ComfyUI',
-                # 'custom_nodes': f'{self.custom_node_dir}',
-                # 'checkpoints': f'{self.custom_model_dir}/checkpoints/',
-                # 'clip': f'{self.custom_model_dir}/clip/',
-                # 'clip_vision': f'{self.custom_model_dir}/clip_vision/',
-                # 'configs': f'{self.custom_model_dir}/configs/',
-                # 'controlnet': f'{self.custom_model_dir}/controlnet/',
-                # 'embeddings': f'{self.custom_model_dir}/embeddings/',
-                # 'loras': f'{self.custom_model_dir}/loras/',
-                # 'upscale_models': f'{self.custom_model_dir}/upscale_models/',
-                # 'vae': f'{self.custom_model_dir}/vae/'
             }
         } 
 
@@ -385,6 +383,7 @@ def reconstruct_inventory(base_path):
             if sub_dir == '__pycache__':
                 continue
 
+            # Module is a git repo
             modules[sub_dir] = reconstruct_module(os.path.join(modules_base_path, sub_dir))
 
     models = {}
@@ -428,7 +427,7 @@ def reconstruct_workflow(base_path):
         **{
             "name": "ComfyUI",
             "github_url": "git@github.com:comfyanonymous/ComfyUI.git",
-            "commit_sha": "f1c2301697cb1cd538f8d4190741935548bb6734",
+            "commit_sha": "4c82741b545c6cedcfa397034f56ce1377b3675a",
         })
     
     models = []

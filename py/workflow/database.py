@@ -14,7 +14,6 @@ engine = create_engine(DATABASE_URL, echo=True)
 class WorkflowRecord(SQLModel, table=True):
     # a record of a workflow in database
     # only store the metadata of a workflow
-
     id: int = Field(primary_key=True)
     name: str
     created_at: str
@@ -44,7 +43,8 @@ class WorkflowRunRecord(SQLModel, table=True):
     updated_at: str | None = None
 
     # Workflow inputs
-    input_files_json: str | None = None # file name -> file path
+    input_files_json: str | None = None # a json list of input file paths
+
     input_override_json: str | None = None
 
     # 
@@ -93,7 +93,6 @@ def list_workflows():
 def get_workflow_by_id(workflow_id: int):
     with Session(engine) as session:
         workflow = session.get(WorkflowRecord, workflow_id)
-        print(workflow)
         return workflow
 
 
