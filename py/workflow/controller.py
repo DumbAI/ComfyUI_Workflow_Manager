@@ -256,87 +256,108 @@ class ComfyUIRunner(Runner):
 
 
     def run(self):
-        workflow_config = None
-        workflow_api_config_file = f'{self.workflow.workflow_dir}/workflow_api.json'
-        with open(workflow_api_config_file, 'r') as f:
-            workflow_config = json.load(f)
+        try:
+            workflow_config = None
+            workflow_api_config_file = f'{self.workflow.workflow_dir}/workflow_api.json'
+            with open(workflow_api_config_file, 'r') as f:
+                workflow_config = json.load(f)
 
-        # override input
-        if self.input_override:
-            def update(d, u):
-                for k, v in u.items():
-                    if isinstance(v, collections.abc.Mapping):
-                        d[k] = update(d.get(k, {}), v)
-                    else:
-                        d[k] = v
-                return d
-            workflow_config = update(workflow_config, self.input_override)
-            # override input value and input files
-            # for k, v in self.input_override.items():
-            #     inputs = v.get('inputs', None)
-            #     if inputs is not None:
-            #         # TODO: only update fields that are in the input_override
-            #         # keep the rest of the input values unchanged
-            #         workflow_config[k]['inputs'].update(inputs)
-            
-        if workflow_config is None:
-            logger.error(f"Error loading workflow config from {workflow_api_config_file}")
-            return
-        
-        url = f"http://{self.host}:{self.port}/prompt"
-        response = requests.post(url, json={"prompt": workflow_config})
-        prompt_response = ComfyUIRunner.PromptResponse(**response.json())
-        if prompt_response.node_errors and len(prompt_response.node_errors.keys()) > 0:
-            logger.error(f"Error running workflow: {prompt_response.node_errors}")
-            return
-        
-        self._update_status("running")
-        
-        
-        get_response = requests.get(url)
-        get_response_json = get_response.json()
-        logger.info(get_response_json)
-        prompt_id = prompt_response.prompt_id
-        logger.info(f"Prompt ID: {prompt_id}")
-        while True:
-            logger.info(f"Checking workflow status: {prompt_id}")
-            get_history_response = requests.get(f'http://{self.host}:{self.port}/history/{prompt_id}')
-            get_history_response_json = get_history_response.json()
-            prompt_status = get_history_response_json.get(f'{prompt_id}', None)
-
-            if prompt_status is None:
-                logger.info(f"Prompt {prompt_id} Workflow not completed yet, no status returned")
-                time.sleep(5)
-                continue
-            
-            status = prompt_status.get('status', None)
-
-            # TODO: comfyui response is not very clear, need to improve
-            if status.get('status_str', None) == 'error':
-                logger.error(f"[Error]: running workflow: {status}")
-                self._update_status("failed")
-                break
+            # override input
+            if self.input_override:
+                def update(d, u):
+                    for k, v in u.items():
+                        if isinstance(v, collections.abc.Mapping):
+                            d[k] = update(d.get(k, {}), v)
+                        else:
+                            d[k] = v
+                    return d
+                workflow_config = update(workflow_config, self.input_override)
                 
-            if status is None or not status.get('completed', False):
-                # pull status again
-                logger.info(f"Prompt {prompt_id} Workflow not completed yet: {status}")
-                time.sleep(5)
-                continue
+            if workflow_config is None:
+                logger.error(f"Error loading workflow config from {workflow_api_config_file}")
+                return
             
-            if status.get('status_str', None) == 'success':
-                logger.info(f"Workflow completed successfully: {status}")
-                self._update_status("completed")
-            else: 
-                # Better error handling
-                logger.error(f"[Error]: running workflow: {status}")
-                self._update_status("failed")
+            url = f"http://{self.host}:{self.port}/prompt"
+            response = requests.post(url, json={"prompt": workflow_config})
+            reponse_json = response.json()
+            logger.info(reponse_json)
+            if reponse_json.get('error', None):
+                logger.error(f"Error running workflow: {reponse_json.get('error')}")
+                raise Exception(f"Error running workflow, {reponse_json}, please check logs in {self.work_dir}")
+            prompt_response = ComfyUIRunner.PromptResponse(**response.json())
+            if prompt_response.node_errors and len(prompt_response.node_errors.keys()) > 0:
+                logger.error(f"Error running workflow: {prompt_response.node_errors}")
+                return
+            
+            self._update_status("running")
+            
+            
+            get_response = requests.get(url)
+            get_response_json = get_response.json()
+            logger.info(get_response_json)
+            prompt_id = prompt_response.prompt_id
+            logger.info(f"Prompt ID: {prompt_id}")
 
-            output_dir = self.workflow_run.output_dir
-            prompt_history_file = os.path.join(output_dir, f'prompt_history_{prompt_id}.json')
-            # write prompt history to file
-            with open(prompt_history_file, 'w') as f:
-                json.dump(get_history_response_json, f)
-            break
+            def get_prompt_status():
+                logger.info(f"Checking workflow status: {prompt_id}")
+                _reties = 0
+                while _reties < 5:
+                    try:
+                        get_history_response = requests.get(
+                            f'http://{self.host}:{self.port}/history/{prompt_id}',
+                            timeout=10
+                        )
+                        return get_history_response.json()
+                    except Exception as e:
+                        logger.error(f"Error getting prompt history: {e}")
+                        _reties += 1
+                        time.sleep(5)
+                        continue
+                        
+                raise Exception(f"Error getting prompt history for {prompt_id}")
+                
+            while True:
+                logger.info(f"Checking workflow status: {prompt_id}, workflow run dir: {self.work_dir}")
+                get_history_response = get_prompt_status()
+                prompt_status = get_history_response.get(f'{prompt_id}', None)
+
+                if prompt_status is None:
+                    logger.info(f"Prompt {prompt_id} Workflow not completed yet, no status returned")
+                    time.sleep(5)
+                    continue
+                
+                status = prompt_status.get('status', None)
+
+                # TODO: comfyui response is not very clear, need to improve
+                if status.get('status_str', None) == 'error':
+                    logger.error(f"[Error]: running workflow: {status}")
+                    self._update_status("failed")
+                    break
+                    
+                if status is None or not status.get('completed', False):
+                    # pull status again
+                    logger.info(f"Prompt {prompt_id} Workflow not completed yet: {status}")
+                    time.sleep(5)
+                    continue
+                
+                if status.get('status_str', None) == 'success':
+                    logger.info(f"Workflow completed successfully: {status}")
+                    self._update_status("completed")
+                else: 
+                    # Better error handling
+                    logger.error(f"[Error]: running workflow: {status}")
+                    self._update_status("failed")
+
+                output_dir = self.workflow_run.output_dir
+                prompt_history_file = os.path.join(output_dir, f'prompt_history_{prompt_id}.json')
+                # write prompt history to file
+                with open(prompt_history_file, 'w') as f:
+                    json.dump(get_history_response, f)
+                break
+        except Exception as e:
+            logger.error(f"Error running workflow: {e}, please check logs in {self.work_dir}")
+            self._update_status("failed")
+            raise e
 
 
 

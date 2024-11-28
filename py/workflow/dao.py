@@ -427,7 +427,7 @@ def reconstruct_workflow(base_path):
         **{
             "name": "ComfyUI",
             "github_url": "git@github.com:comfyanonymous/ComfyUI.git",
-            "commit_sha": "4c82741b545c6cedcfa397034f56ce1377b3675a",
+            "commit_sha": "f1c2301697cb1cd538f8d4190741935548bb6734",
         })
     
     models = []
@@ -444,9 +444,10 @@ def reconstruct_workflow(base_path):
                             custom_nodes=modules, 
                             custom_models=models)
 
+    name = os.path.basename(base_path)
     workflow = Workflow(
         id=str(uuid.uuid4()),
-        name="all_in_one_controlnet", 
+        name=name,
         category="comfyui",
         description="Example workflow for comfyui", 
         workflow_dir=base_path,

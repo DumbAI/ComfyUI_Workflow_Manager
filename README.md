@@ -21,30 +21,14 @@ The framework should be able to run workflow in remote machine (how??? Skypilot?
 The framework UI should show status of all worker, including CPU, GPU, Mem utilization
 
 
+# Work with workspace
 
-# Work log
-
-## 7/19
-Test workflow
-```
-cd py
-PYTHONPATH=$(pwd) python workflow/controller.py
-```
-
-Manual Step 
-* Tune on Dev mode, save workflow API format
-* Display node ID: https://www.reddit.com/r/comfyui/comments/1aotb3w/which_custom_node_shows_the_node_id_number_on/
-
-## 8/4
-Basic UI function to mange workflows
-
-# 8/12
-Add data abstraction for inventory and workflow
-
-
-## 8/17
-build database
+sqlite3 your_database.db
 
 ```
-python -m workflow.state_manager
+.tables
+
+select * from workflowrecord;
+
+.quit
 ```

@@ -19,12 +19,6 @@ from .database import *
 
 from job_queue import JobQueue, DynamoDBJobQueue, SingleThreadJobScheduler, EchoWorkflow, Workflow, JobRequest, JobResponse, File
 
-# configure botos AWS credentials
-os.environ['AWS_ACCESS_KEY_ID'] = ''
-os.environ['AWS_SECRET_ACCESS_KEY'] = ''
-os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
-
-
 class ComfyWorkflow(Workflow):
     def __call__(self, request: JobRequest) -> JobResponse:
         print(f'Processing job {request}')
@@ -34,7 +28,8 @@ class ComfyWorkflow(Workflow):
         workspace = Workspace(base_path=base_path)
         # for each job, launch the workflow process
         # FIXME: different poller should dispatch to different workflow
-        workflow_id = 1
+        
+        workflow_id = request.Params.get('workflow_id', 3)
         workflow_record_to_run = get_workflow_by_id(workflow_id)
         print(workflow_record_to_run)
 
@@ -59,7 +54,12 @@ class ComfyWorkflow(Workflow):
         override_template = {}
         with open(workflow_input_override_json_file, 'r') as f:
             workflow_input_override_json = json.load(f)
-            override_value = workflow_input_override_json.get('override_value', {}).update(input_override)
+            
+            # override value using parameters from request
+            override_value = workflow_input_override_json.get('override_value', {})
+            override_value.update(input_override)
+            
+            # interpolate override value into override template
             override_template=workflow_input_override_json.get('override_template', {})
             # recursively update the input value in override template
             def update_input_value(override_value, override_template):
