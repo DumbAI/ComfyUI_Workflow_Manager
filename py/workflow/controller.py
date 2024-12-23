@@ -29,7 +29,7 @@ import requests
 from queue import Queue
 
 from .dao import Workspace, get_workflow_manifest
-from .utils import logger
+from loguru import logger
 from .database import *
 
 # a global registry of all subprocesses
@@ -259,6 +259,7 @@ class ComfyUIRunner(Runner):
         try:
             workflow_config = None
             workflow_api_config_file = f'{self.workflow.workflow_dir}/workflow_api.json'
+            logger.info(f"Loading workflow from {workflow_api_config_file}")
             with open(workflow_api_config_file, 'r') as f:
                 workflow_config = json.load(f)
 
@@ -276,6 +277,8 @@ class ComfyUIRunner(Runner):
             if workflow_config is None:
                 logger.error(f"Error loading workflow config from {workflow_api_config_file}")
                 return
+
+            logger.info(f"Running workflow: {workflow_config}")
             
             url = f"http://{self.host}:{self.port}/prompt"
             response = requests.post(url, json={"prompt": workflow_config})
@@ -290,7 +293,6 @@ class ComfyUIRunner(Runner):
                 return
             
             self._update_status("running")
-            
             
             get_response = requests.get(url)
             get_response_json = get_response.json()
@@ -360,7 +362,6 @@ class ComfyUIRunner(Runner):
             raise e
 
 
-
     def teardown(self):
         try:
             self.process.terminate()
@@ -383,13 +384,6 @@ def run_workflow(workspace: Workspace, workflow: WorkflowRecord,
     workflow_to_run = get_workflow_manifest(workflow.workflow_dir)
 
     # Launch the workflow process
-    # input_override = {
-    #     "326": {
-    #         "inputs": {
-    #             "image": "headshot.png"
-    #         }
-    #     },
-    # }
     workflow_run = WorkflowRunRecord(
         workflow_id=workflow.id,
         status=WorkflowRunStatus.PENDING.value,

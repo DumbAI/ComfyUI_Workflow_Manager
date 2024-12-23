@@ -10,21 +10,21 @@ from .database import *
 
 
 def install_workflow(workspace_base_path: str, workflow_base_path: str):
+    # 
+    # Workflow installation
+    #
+    
+    # Workflow pre-requisite files
+    # - workflow.json // for backup an reuse
+    # - workflow_api.json
+    # - input_override.json
+    # - dependency.json
+    # - input/
 
     # base_path = "/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace"
     workspace = Workspace(base_path=workspace_base_path)
     inventory = reconstruct_inventory(workspace_base_path)
 
-    # 
-    # Workflow installation
-    #
-    
-    # Workflow pre-requisite file sanity check
-    # - orkflow_api.json
-    # - input_override.json
-    # - dependency.json
-    # - input/
-    
     
     # Assume an app is installed in this path, below is the installation logic
     #
@@ -50,11 +50,8 @@ def install_workflow(workspace_base_path: str, workflow_base_path: str):
     # workflow_record_to_run = get_workflow_by_id(worflow_record.id) # workflow metadata
     # run_workflow(workspace, workflow_record_to_run)
 
-
-    
-
 if __name__ == "__main__":
     install_workflow(
-        workflow_base_path="/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace/workflows/birthday",
+        workflow_base_path="/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace/workflows/general_v1",
         workspace_base_path="/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace"
     )

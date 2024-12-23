@@ -12,8 +12,7 @@ from boto3.dynamodb.conditions import Key, Attr
 
 from .dao import Workspace, reconstruct_workflow, reconstruct_inventory, get_workflow_manifest
 from .controller import run_workflow 
-from .utils import logger
-
+from loguru import logger
 
 from .database import *
 
@@ -74,30 +73,28 @@ class ComfyWorkflow(Workflow):
                 override_template
             )
 
-
         # Launch workflow
-        print(f'Launching workflow {workflow_record_to_run}')
+        logger.info(f'Launching workflow {workflow_record_to_run}')
         workflow_run = run_workflow(
             workspace, 
             workflow_record_to_run,
             input_files=[download_file_path],
             input_override=override_template
         )
-        print(workflow_run)
+        logger.info(workflow_run)
 
         # Recursively list all files from the output directory
         output_files = []
         for root, dirs, files in os.walk(workflow_run.output_dir):
             for file in files:
-                print(f'Processing file {root}, {dirs}, {file}')
+                logger.info(f'Processing file {root}, {dirs}, {file}')
                 with open(f'{root}/{file}', 'rb') as f:
                     content = f.read()
                     out_file = File(Name=file)
                     out_file.content = io.BytesIO(content)
                     output_files.append(out_file)
         
-        return JobResponse(
-            OutputFiles=output_files)
+        return JobResponse(OutputFiles=output_files)
         
 
 if __name__ == '__main__':
