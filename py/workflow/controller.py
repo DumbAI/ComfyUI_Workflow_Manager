@@ -278,8 +278,6 @@ class ComfyUIRunner(Runner):
                 logger.error(f"Error loading workflow config from {workflow_api_config_file}")
                 return
 
-            logger.info(f"Running workflow: {workflow_config}")
-            
             url = f"http://{self.host}:{self.port}/prompt"
             response = requests.post(url, json={"prompt": workflow_config})
             reponse_json = response.json()

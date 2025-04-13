@@ -18,34 +18,40 @@ from .database import *
 
 from job_queue import JobQueue, DynamoDBJobQueue, SingleThreadJobScheduler, EchoWorkflow, Workflow, JobRequest, JobResponse, File
 
+def write_input_file(input_file_path, file: File):
+    # make directory if not exist
+    os.makedirs(os.path.dirname(input_file_path), exist_ok=True)
+    
+    # write input buffer to file on disk
+    with open(input_file_path, 'wb') as f:
+        f.write(file.content.read())
+    
+
 class ComfyWorkflow(Workflow):
     def __call__(self, request: JobRequest) -> JobResponse:
-        print(f'Processing job {request}')
+        logger.info(f'Processing job {request}')
         
         # FIXME: workflow should be already installed in the workspace
         base_path = "/home/ruoyu.huang/workspace/xiaoapp/comfyui_workspace"
         workspace = Workspace(base_path=base_path)
         # for each job, launch the workflow process
         # FIXME: different poller should dispatch to different workflow
-        
-        workflow_id = request.Params.get('workflow_id', 3)
+        workflow_id = request.Params.get('workflow_id', 4)
         workflow_record_to_run = get_workflow_by_id(workflow_id)
-        print(workflow_record_to_run)
-
+        logger.info(workflow_record_to_run)
 
         temp_input_file_dir = f'/{uuid.uuid4()}'
-        input_file = request.InputFiles[0]
-        file_name = input_file.Name
-        if input_file.content is None:
-            raise Exception('Input file content is None')
-        
-        download_file_path = f'{workspace.user_space_path}/{temp_input_file_dir}/{file_name}'
-        # make directory if not exist
-        os.makedirs(os.path.dirname(download_file_path), exist_ok=True)
-        
-        # write input buffer to file on disk
-        with open(download_file_path, 'wb') as f:
-            f.write(input_file.content.read())
+        input_files = []
+        for input_file in request.InputFiles:
+            file_name = input_file.Name
+            logger.info(f'Processing input file {file_name}')
+            if input_file.content is None:
+                raise Exception('Input file content is None')
+            
+            download_file_path = f'{workspace.user_space_path}/{temp_input_file_dir}/{file_name}'
+            # make directory if not exist
+            write_input_file(download_file_path, input_file)
+            input_files.append(download_file_path)
         
         # Resolve input override
         input_override = request.Params.get('input_override', {})
@@ -78,7 +84,7 @@ class ComfyWorkflow(Workflow):
         workflow_run = run_workflow(
             workspace, 
             workflow_record_to_run,
-            input_files=[download_file_path],
+            input_files=input_files,
             input_override=override_template
         )
         logger.info(workflow_run)

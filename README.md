@@ -32,3 +32,72 @@ select * from workflowrecord;
 
 .quit
 ```
+
+
+## Service tab
+
+Service tab:
+
+```
+[Unit]
+Description=ComfyUI Workflow Manager Service
+After=network.target
+
+[Service]
+Type=simple
+User=ruoyu.huang
+WorkingDirectory=/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/py
+Environment="PATH=/home/ruoyu.huang/workspace/xiaoapp/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="VIRTUAL_ENV=/home/ruoyu.huang/workspace/xiaoapp/venv"
+EnvironmentFile=/home/ruoyu.huang/workspace/xiaoapp/ComfyUI_Workflow_Manager/py/.env
+ExecStart=/home/ruoyu.huang/workspace/xiaoapp/venv/bin/python3 -m workflow.scheduler
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Install service tab
+```
+sudo vi /etc/systemd/system/comfyui-workflow-manager.service
+sudo chmod 644 /etc/systemd/system/comfyui-workflow-manager.service
+sudo systemctl enable comfyui-workflow-manager
+sudo systemctl start comfyui-workflow-manager
+
+sudo systemctl status comfyui-workflow-manager
+```
+
+Monitor the logs
+
+```
+journalctl -u comfyui-workflow-manager -f
+```
+
+
+### Install New Workflow
+
+Copy pre-requisite file to workflow folder
+ - workflow.json // for backup an reuse
+ - workflow_api.json
+ - input_override.json
+ - dependency.json
+ - input/
+
+ Carefully create the input_override.json
+ - pick the node from workflow_api.json
+ - change node input value to a symbol
+ - provide default value for all input symbols
+
+ Then copy input files (text, image) to input/ folder, 
+ and make sure deafault value in input_override.json match the file name in input/ folder
+
+ run workflow installer to install the workflow into database
+ ```
+ python -m workflow.workflow_installer
+ ```
+
+ Or run the workflow test to test the workflow ()
+ ```
+ python -m workflow.test_workflow_run
+ ```
